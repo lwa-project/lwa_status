@@ -1,7 +1,7 @@
-BlinkStick
+LWA1Status
 ==========
 Directory of software that makes use of the BlinkStick single-pixel USB 
-stick.
+stick to show the status of LWA1.
 
 lwa1Status.py
 -------------
