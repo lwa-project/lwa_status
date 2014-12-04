@@ -24,7 +24,8 @@ import time
 import curses
 import string
 import urllib
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from blinkstick import blinkstick
 
 
@@ -50,82 +51,161 @@ Updated: $tUpdate UTC
 """)
 
 
-def getStatus():
+class PollStation(object):
 	"""
-	Get the current state of LWA1 from the OpScreen page.  This function
-	returns a four element tuple of status update time time as a datetime
-	instance, the overall station status, a five-element list of DR 
-	OP-TYPEs, and a boolean for if PASI is running or not.
-	
-	The station status and OP-TYPEs are expressed a integers.  The values are:
-	Station Status
-	  0 - One or more subsystems are in error 
-	  1 - No errors conditions but not all subsystems are normal
-	  2 - All subsystems are normal
-	  
-	DR OP-TYPE
-	  0 - Idle
-	  1 - Spectrometer mode
-	  2 - Raw data recording mode
+	Class for polling the station status in the background at the specified 
+	interval in seconds.
 	"""
 	
-	# Update time
-	tNow = datetime.utcnow()
-	
-	# Default values
-	sysStatus = 0
-	opType = [0 for i in xrange(5)]
-	pasi = False
-	
-	try:
-		# Fetch the OpScreen page
-		fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/os2.php')
-		output = fh.read()
-		fh.close()
+	def __init__(self, pollInterval=180):
+		self.pollInterval = float(pollInterval)
 		
-		# Parse
-		sysStatus = 0
-		opType = [0 for i in xrange(5)]
-		output = output.split('\n')
-		for line in output:
-			## Station status
-			if line.find('favicon-normal') != -1:
-				sysStatus = 2
-			elif line.find('favicon-warning') != -1:
-				sysStatus = 1
-			elif line.find('favicon-error') != -1:
+		# Attributes to store the station status
+		self.lastUpdate = datetime.utcnow() - timedelta(minutes=30)
+		self.systemStatus = 0
+		self.opTypes = [0, 0, 0, 0, 0]
+		self.pasiRunning = False
+		
+		# Setup threading
+		self.thread = None
+		self.alive = threading.Event()
+		self.lock = threading.Lock()
+		
+	def start(self):
+		if self.thread is not None:
+			self.stop()
+			
+		self.thread = threading.Thread(target=self.monitor, name='monitor')
+		self.thread.setDaemon(1)
+		self.alive.set()
+		self.thread.start()
+		time.sleep(5)
+		
+	def stop(self):
+		if self.thread is not None:
+			self.alive.clear()          #clear alive event for thread
+			
+			self.thread.join()          #don't wait too long on the thread to finish
+			self.thread = None
+			
+	def monitor(self):
+		"""
+		Get the current state of LWA1 from the OpScreen page.  This function
+		returns a four element tuple of status update time time as a datetime
+		instance, the overall station status, a five-element list of DR 
+		OP-TYPEs, and a boolean for if PASI is running or not.
+		
+		The station status and OP-TYPEs are expressed a integers.  The values are:
+		Station Status
+		0 - One or more subsystems are in error 
+		1 - No errors conditions but not all subsystems are normal
+		2 - All subsystems are normal
+		
+		DR OP-TYPE
+		0 - Idle
+		1 - Spectrometer mode
+		2 - Raw data recording mode
+		"""
+		
+		while self.alive.isSet():
+			tStart = time.time()
+			
+			# Update time
+			tNow = datetime.utcnow()
+			
+			# Default values
+			sysStatus = 0
+			opType = [0 for i in xrange(5)]
+			pasi = False
+			
+			try:
+				# Fetch the OpScreen page
+				fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/os2.php')
+				output = fh.read()
+				fh.close()
+				
+				# Parse
 				sysStatus = 0
+				opType = [0 for i in xrange(5)]
+				output = output.split('\n')
+				for line in output:
+					## Station status
+					if line.find('favicon-normal') != -1:
+						sysStatus = 2
+					elif line.find('favicon-warning') != -1:
+						sysStatus = 1
+					elif line.find('favicon-error') != -1:
+						sysStatus = 0
+						
+					## DR OP-TYPEs
+					mtch = drRE.search(line)
+					if mtch is not None:
+						n = int(mtch.group('N')) - 1
+						
+						if line.find('Record') != -1:
+							opType[n] = 2
+						elif line.find('Spectrometr') != -1:
+							opType[n] = 1
+							
+				# Figure out if PASI is running
+				fh = urllib.urlopen("http://lwalab.phys.unm.edu/lwatv/lwatv.png")
+				data = fh.read()
+				fh.close()
 				
-			## DR OP-TYPEs
-			mtch = drRE.search(line)
-			if mtch is not None:
-				n = int(mtch.group('N')) - 1
+				info = fh.info()
+				lm = info.get("last-modified")
+				lm = datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S GMT")
+				age = datetime.utcnow() - lm
+				age = age.days*24*3600 + age.seconds
 				
-				if line.find('Record') != -1:
-					opType[n] = 2
-				elif line.find('Spectrometr') != -1:
-					opType[n] = 1
+				# Is the image recent enough to think that TBN/PASI is running?
+				if age < 120:
+					pasi = True
 					
-		# Figure out if PASI is running
-		fh = urllib.urlopen("http://lwalab.phys.unm.edu/lwatv/lwatv.png")
-		data = fh.read()
-		fh.close()
+				# Update
+				self.lock.acquire()
+				self.lastUpdate = tNow
+				self.systemStatus = sysStatus
+				self.opTypes = opType
+				self.pasiRunning = pasi
+				self.lock.release()
+			except:
+				pass
+				
+			# Main loop stop time
+			tStop = time.time()
+			
+			# Pause before the next monitoring update
+			sleepCount = 0.0
+			sleepTime = self.pollInterval - (tStop - tStart)
+			while (self.alive.isSet() and sleepCount < sleepTime):
+				time.sleep(0.2)
+				sleepCount += 0.2
+				
+	def getStatus(self):
+		"""
+		Get the current state of LWA1 from the OpScreen page.  This function
+		returns a four element tuple of status update time time as a datetime
+		instance, the overall station status, a five-element list of DR 
+		OP-TYPEs, and a boolean for if PASI is running or not.
 		
-		info = fh.info()
-		lm = info.get("last-modified")
-		lm = datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S GMT")
-		age = datetime.utcnow() - lm
-		age = age.days*24*3600 + age.seconds
+		The station status and OP-TYPEs are expressed a integers.  The values are:
+		Station Status
+		0 - One or more subsystems are in error 
+		1 - No errors conditions but not all subsystems are normal
+		2 - All subsystems are normal
 		
-		# Is the image recent enough to think that TBN/PASI is running?
-		if age < 120:
-			pasi = True
+		DR OP-TYPE
+		0 - Idle
+		1 - Spectrometer mode
+		2 - Raw data recording mode
+		"""
 		
-	except:
-		pass
+		self.lock.acquire()
+		output = (self.lastUpdate, self.systemStatus, self.opTypes, self.pasiRunning)
+		self.lock.release()
 		
-	# Done
-	return tNow, sysStatus, opType, pasi
+		return output
 
 
 def restorescreen():
@@ -181,6 +261,10 @@ def main(args):
 	ssColors = ['red', 'orange', 'green']
 	otColors = ['black', 'blue', 'green']
 	
+	# Start the background task
+	poll = PollStation(pollInterval=180)
+	poll.start()
+	
 	try:
 		# Setup display screen
 		screen = curses.initscr()
@@ -190,7 +274,7 @@ def main(args):
 		
 		# Get the latest information from the OpScreen page
 		t0 = time.time()
-		tNow, sysStatus, opType, pasi = getStatus()
+		tNow, sysStatus, opType, pasi = poll.getStatus()
 		
 		# Refresh screen
 		screen.clear()
@@ -202,10 +286,10 @@ def main(args):
 			## Check the time to see if we need to update the status.  This happens
 			## once every ~3 minutes to keep the load on lwalab down.
 			t1 = time.time()
-			if t1-t0 > 180:
+			if t1-t0 > 30:
 				# Update
 				t0 = time.time()
-				tNow, sysStatus, opType, pasi = getStatus()
+				tNow, sysStatus, opType, pasi = poll.getStatus()
 				
 				# Refresh screen
 				screen.clear()
@@ -254,6 +338,7 @@ def main(args):
 	# the blinkstick
 	restorescreen()
 	bs.turn_off()
+	poll.stop()
 	
 	# Report on any exception that may have caused the main loop to exit
 	try:
