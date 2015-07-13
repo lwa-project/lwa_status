@@ -120,7 +120,7 @@ class PollStation(object):
 			
 			try:
 				# Fetch the OpScreen page
-				fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/os2.php')
+				fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/lwa1/os2.php')
 				output = fh.read()
 				fh.close()
 				
