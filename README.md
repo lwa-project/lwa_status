@@ -1,24 +1,23 @@
-LWA1Status
-==========
+LWA Status
+===========
 Directory of software that makes use of the BlinkStick single-pixel USB 
-stick to show the status of LWA1.
+stick to show the status of an LWA station.
 
-lwa1Status.py
+lwaStatus.py
 -------------
-Python script using a BlinkStick to provide a visual indicator of what LWA1 
-is doing.  This includes:
+Python script using a BlinkStick to provide a visual indicator of what an
+LWA stations is doing.  This includes:
   * Overall station status
   * Data recorder operations
-  * Whether or not PASI is running/updating LWATV
+  * Whether or not LASI is running/updating LWATV
 
-LWA1 Status - BlinkStick Page.docx
+LWA Status - BlinkStick Page.docx
 ----------------------------------
-Make it this: Printable page describing the different color states of 
-lwa1Status.py - Word version.
+Printable page describing the different color states of lwaStatus.py - Word 
+version.
 
-LWA1 Status - BlinkStick Page.pdf
+LWA Status - BlinkStick Page.pdf
 ---------------------------------
-Make it this: Printable page describing the different color states of 
-lwa1Status.py - PDF version.
-
+Printable page describing the different color states of lwaStatus.py - PDF 
+version.
 
