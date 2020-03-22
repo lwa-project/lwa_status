@@ -3,8 +3,8 @@
 
 """
 Script that uses a BlinkStick (http://www.blinkstick.com/) to provide a 
-visual indication of the status of LWA1 through a series of flashes.  The
-flashes shown are:
+visual indication of the status of an LWA station through a series of 
+flashes.  The flashes shown are:
   ~1 second of green, yellow, or red for the overall station status with:
     green - All subsystems are normal
     yellow - No errors conditions but not all subsystems are normal
@@ -24,6 +24,7 @@ import time
 import curses
 import string
 import urllib
+import argparse
 import threading
 from datetime import datetime, timedelta
 from blinkstick import blinkstick
@@ -34,7 +35,38 @@ drRE = re.compile(r'\<tr\>\<td\>DR(?P<N>\d)\<\/td\>')
 
 
 # Template for the curses output
-display = string.Template("""Overall Station Status:
+display = {}
+
+display[3] = string.Template("""Overall Status of $station:
+$sysStatus
+
+Operation Types:
+  DR1: $optype1
+  DR2: $optype2
+  DR3: $optype3
+
+LASI:
+  $lasiStatus
+
+Updated: $tUpdate UTC
+""")
+
+display[4] = string.Template("""Overall Status of $station:
+$sysStatus
+
+Operation Types:
+  DR1: $optype1
+  DR2: $optype2
+  DR3: $optype3
+  DR4: $optype4
+
+LASI:
+  $lasiStatus
+
+Updated: $tUpdate UTC
+""")
+
+display[5] = string.Template("""Overall Status of $station:
 $sysStatus
 
 Operation Types:
@@ -44,8 +76,8 @@ Operation Types:
   DR4: $optype4
   DR5: $optype5
 
-PASI:
-  $pasiStatus
+LASI:
+  $lasiStatus
 
 Updated: $tUpdate UTC
 """)
@@ -57,14 +89,17 @@ class PollStation(object):
     interval in seconds.
     """
     
-    def __init__(self, pollInterval=180):
+    def __init__(self, station, lwatv_channel, ndr, pollInterval=180):
+        self.station = station
+        self.lwatv_channel = lwatv_channel
+        self.ndr = ndr
         self.pollInterval = float(pollInterval)
         
         # Attributes to store the station status
         self.lastUpdate = datetime.utcnow() - timedelta(minutes=30)
         self.systemStatus = 0
-        self.opTypes = [0, 0, 0, 0, 0]
-        self.pasiRunning = False
+        self.opTypes = [0,]*self.ndr
+        self.lasiRunning = False
         
         # Setup threading
         self.thread = None
@@ -90,12 +125,13 @@ class PollStation(object):
             
     def monitor(self):
         """
-        Get the current state of LWA1 from the OpScreen page.  This function
-        returns a four element tuple of status update time time as a datetime
-        instance, the overall station status, a five-element list of DR 
-        OP-TYPEs, and a boolean for if PASI is running or not.
+        Get the current state of the LWA station from the OpScreen page.  This 
+        function returns a four element tuple of status update time time as a 
+        datetime instance, the overall station status, a ndr-element list of 
+        DR OP-TYPEs, and a boolean for if LASI is running or not.
         
-        The station status and OP-TYPEs are expressed a integers.  The values are:
+        The station status and OP-TYPEs are expressed a integers.  The values 
+        are:
         Station Status
         0 - One or more subsystems are in error 
         1 - No errors conditions but not all subsystems are normal
@@ -115,18 +151,18 @@ class PollStation(object):
             
             # Default values
             sysStatus = 0
-            opType = [0 for i in xrange(5)]
-            pasi = False
+            opType = [0 for i in xrange(self.ndr)]
+            lasi = False
             
             try:
                 # Fetch the OpScreen page
-                fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/lwa1/os2.php')
+                fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/%s/os2.php' % self.station)
                 output = fh.read()
                 fh.close()
                 
                 # Parse
                 sysStatus = 0
-                opType = [0 for i in xrange(5)]
+                opType = [0 for i in xrange(self.ndr)]
                 output = output.split('\n')
                 for line in output:
                     ## Station status
@@ -147,8 +183,8 @@ class PollStation(object):
                         elif line.find('Spectrometr') != -1:
                             opType[n] = 1
                             
-                # Figure out if PASI is running
-                fh = urllib.urlopen("http://lwalab.phys.unm.edu/lwatv/lwatv.png")
+                # Figure out if LASI is running
+                fh = urllib.urlopen("http://lwalab.phys.unm.edu/%s/lwatv.png" % self.lwatv_channel)
                 data = fh.read()
                 fh.close()
                 
@@ -158,16 +194,16 @@ class PollStation(object):
                 age = datetime.utcnow() - lm
                 age = age.days*24*3600 + age.seconds
                 
-                # Is the image recent enough to think that TBN/PASI is running?
+                # Is the image recent enough to think that TBN/LASI is running?
                 if age < 120:
-                    pasi = True
+                    lasi = True
                     
                 # Update
                 self.lock.acquire()
                 self.lastUpdate = tNow
                 self.systemStatus = sysStatus
                 self.opTypes = opType
-                self.pasiRunning = pasi
+                self.lasiRunning = lasi
                 self.lock.release()
             except:
                 pass
@@ -187,7 +223,7 @@ class PollStation(object):
         Get the current state of LWA1 from the OpScreen page.  This function
         returns a four element tuple of status update time time as a datetime
         instance, the overall station status, a five-element list of DR 
-        OP-TYPEs, and a boolean for if PASI is running or not.
+        OP-TYPEs, and a boolean for if LASI is running or not.
         
         The station status and OP-TYPEs are expressed a integers.  The values are:
         Station Status
@@ -202,7 +238,7 @@ class PollStation(object):
         """
         
         self.lock.acquire()
-        output = (self.lastUpdate, self.systemStatus, self.opTypes, self.pasiRunning)
+        output = (self.lastUpdate, self.systemStatus, self.opTypes, self.lasiRunning)
         self.lock.release()
         
         return output
@@ -218,13 +254,13 @@ def restorescreen():
     curses.endwin()
 
 
-def getDisplayInformation(tNow, sysStatus, opType, pasi):
+def getDisplayInformation(tNow, stationName, sysStatus, opType, lasi):
     """
     Given the output of getStatus(), generate the curses display string.
     """
     
     # Station status
-    subs = {}
+    subs = {'station': stationName.upper()}
     if sysStatus == 0:
         subs['sysStatus'] = 'One or more subsystems in error                       '
     elif sysStatus == 1:
@@ -233,7 +269,7 @@ def getDisplayInformation(tNow, sysStatus, opType, pasi):
         subs['sysStatus'] = 'All subsystems are normal                             '
         
     # DR OP-TYPEs
-    for i in xrange(5):
+    for i in xrange(len(opType)):
         key = 'optype%i' % (i+1)
         if opType[i] == 0:
             subs[key] = 'Idle        '
@@ -242,17 +278,27 @@ def getDisplayInformation(tNow, sysStatus, opType, pasi):
         else:
             subs[key] = 'Recording   '
             
-    # PASI status
-    subs['pasiStatus'] = 'Running    ' if pasi else 'Not running'
+    # LASI status
+    subs['lasiStatus'] = 'Running    ' if lasi else 'Not running'
     
     # Update time
     subs['tUpdate'] = tNow.strftime("%Y/%m/%d %H:%M:%S")
     
     # Done
-    return display.safe_substitute(subs)
+    return display[len(opType)].safe_substitute(subs)
 
 
 def main(args):
+    if args.lwasv:
+        station = 'lwasv'
+        lwatv_channel = 'lwatv2'
+        ndr = 4
+    else:
+        ## Default to LWA1
+        station = 'lwa1'
+        lwatv_channel = 'lwatv'
+        ndr = 5
+        
     # Setup the BlinkStick
     bs = blinkstick.find_first()
     print 'Using: %s' % bs.get_serial()	
@@ -262,7 +308,8 @@ def main(args):
     otColors = ['black', 'blue', 'green']
     
     # Start the background task
-    poll = PollStation(pollInterval=180)
+    poll = PollStation(station, lwatv_channel, ndr,
+                       pollInterval=180)
     poll.start()
     
     try:
@@ -274,11 +321,11 @@ def main(args):
         
         # Get the latest information from the OpScreen page
         t0 = time.time()
-        tNow, sysStatus, opType, pasi = poll.getStatus()
+        tNow, sysStatus, opType, lasi = poll.getStatus()
         
         # Refresh screen
         screen.clear()
-        screen.addstr(0,0,getDisplayInformation(tNow, sysStatus, opType, pasi))
+        screen.addstr(0,0,getDisplayInformation(tNow, station, sysStatus, opType, lasi))
         screen.refresh()
         
         # Go!
@@ -289,11 +336,11 @@ def main(args):
             if t1-t0 > 30:
                 # Update
                 t0 = time.time()
-                tNow, sysStatus, opType, pasi = poll.getStatus()
+                tNow, sysStatus, opType, lasi = poll.getStatus()
                 
                 # Refresh screen
                 screen.clear()
-                screen.addstr(0,0,getDisplayInformation(tNow, sysStatus, opType, pasi))
+                screen.addstr(0,0,getDisplayInformation(tNow, station, sysStatus, opType, lasi))
                 
             ## Blink out the station status
             try:
@@ -315,8 +362,8 @@ def main(args):
                 except IOError:
                     pass
                     
-            # Blink the PASI status
-            if pasi:
+            # Blink the LASI status
+            if lasi:
                 try:
                     bs.pulse(name='purple', repeats=1, duration=250)
                     time.sleep(0.25)
@@ -362,5 +409,14 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+            description="Blink out the status of an LWA station using a BlinkStick",
+            )
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--lwa1', action='store_true',
+                        help='report on LWA1')
+    group.add_argument('--lwasv', action='store_true',
+                       help='report on LWA-SV')
+    args = parser.parse_args()
+    main(args)
         
