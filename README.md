@@ -3,6 +3,8 @@ LWA Status
 Directory of software that makes use of the BlinkStick single-pixel USB 
 stick to show the status of an LWA station.
 
+![Example lwaStatus.py output](https://github.com/lwa-project/lwa_status/raw/main/images/example.png)
+
 lwaStatus.py
 -------------
 Python script using a BlinkStick to provide a visual indicator of what an
