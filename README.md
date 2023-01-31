@@ -23,3 +23,9 @@ LWA Status - BlinkStick Page.pdf
 Printable page describing the different color states of lwaStatus.py - PDF 
 version.
 
+
+Other LWA Education and Public Outreach Resources
+=================================================
+ * [lwatv](https://github.com/lwa-project/lwatv) - graphical view of what the stations are observing
+ * [The Low Frequency Sky](https://fornax.phys.unm.edu/low-frequency-sky/index.html) - an interactive view of the sky below 100 MHz
+ * [The Multi-Wavelength Sky](https://fornax.phys.unm.edu/multi-wavelength-sky/index.html) - compare how the sky looks at a variety of wavelengths
