@@ -28,6 +28,8 @@ Other LWA Education and Public Outreach Resources
 =================================================
  * [LWATV Channel 1](https://leo.phys.unm.edu/~lwa/lwatv.html) - the sky over LWA1
  * [LWATV Channel 2](https://leo.phys.unm.edu/~lwa/lwatv2.html) - the sky over LWA-SV
+ * [LWATV Channel 3](https://leo.phys.unm.edu/~lwa/lwatv3.html) - the sky over OVRO-LWA
+ * [LWATV Channel 4](https://leo.phys.unm.edu/~lwa/lwatv4.html) - the sky over LWA-NA
  * [lwatv](https://github.com/lwa-project/lwatv) - graphical view of what the stations are observing
  * [The Low Frequency Sky](https://fornax.phys.unm.edu/low-frequency-sky/index.html) - an interactive view of the sky below 100 MHz
  * [The Multi-Wavelength Sky](https://fornax.phys.unm.edu/multi-wavelength-sky/index.html) - compare how the sky looks at a variety of wavelengths
