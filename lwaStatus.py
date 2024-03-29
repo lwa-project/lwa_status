@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 
 """
 Script that uses a BlinkStick (http://www.blinkstick.com/) to provide a 
@@ -20,10 +19,11 @@ In addition, the station information is displayed on the running terminal.
 
 import re
 import sys
+import json
 import time
 import curses
 import string
-import urllib
+from urllib.request import urlopen
 import argparse
 import threading
 from datetime import datetime, timedelta
@@ -36,6 +36,19 @@ drRE = re.compile(r'\<tr\>\<td\>DR(?P<N>\d)\<\/td\>')
 
 # Template for the curses output
 display = {}
+
+display[2] = string.Template("""Overall Status of $station:
+$sysStatus
+
+Operation Types:
+  DR1: $optype1
+  DR2: $optype2
+
+LASI:
+  $lasiStatus
+
+Updated: $tUpdate UTC
+""")
 
 display[3] = string.Template("""Overall Status of $station:
 $sysStatus
@@ -151,44 +164,38 @@ class PollStation(object):
             
             # Default values
             sysStatus = 0
-            opType = [0 for i in xrange(self.ndr)]
+            opType = [0 for i in range(self.ndr)]
             lasi = False
             
             try:
                 # Fetch the OpScreen page
-                fh = urllib.urlopen('http://lwalab.phys.unm.edu/OpScreen/%s/os2.php' % self.station)
-                output = fh.read()
-                fh.close()
-                
+                with urlopen('http://lwalab.phys.unm.edu/OpScreen/%s/status.json' % self.station) as uh:
+                    output = json.loads(uh.read())
+                    
                 # Parse
-                sysStatus = 0
-                opType = [0 for i in xrange(self.ndr)]
-                output = output.split('\n')
-                for line in output:
+                sysStatus = 2
+                opType = [0 for i in range(self.ndr)]
+                for entry in output:
                     ## Station status
-                    if line.find('favicon-normal') != -1:
-                        sysStatus = 2
-                    elif line.find('favicon-warning') != -1:
-                        sysStatus = 1
-                    elif line.find('favicon-error') != -1:
-                        sysStatus = 0
-                        
+                    if entry['setting'] == 'SUMMARY':
+                        if entry['value'] in ('WARNING', 'SHUTDWN') and sysStatus > 1:
+                            sysStatus = 1
+                        if entry['value'] == 'ERROR' and sysStatus > 0:
+                            sysStatus = 0
+                            
                     ## DR OP-TYPEs
-                    mtch = drRE.search(line)
-                    if mtch is not None:
-                        n = int(mtch.group('N')) - 1
-                        
-                        if line.find('Record') != -1:
+                    if entry['subsystem'].startswith('DR') and entry['setting'] == 'OP_TYPE':
+                        n = int(entry['subsystem'][2:], 10) - 1
+                        if entry['value'] == 'Record':
                             opType[n] = 2
-                        elif line.find('Spectrometr') != -1:
+                        elif entry['value'] == 'Spectrometr':
                             opType[n] = 1
                             
                 # Figure out if LASI is running
-                fh = urllib.urlopen("http://lwalab.phys.unm.edu/%s/lwatv.png" % self.lwatv_channel)
-                data = fh.read()
-                fh.close()
-                
-                info = fh.info()
+                with urlopen("http://lwalab.phys.unm.edu/%s/lwatv.png" % self.lwatv_channel) as uh:
+                    info = uh.info()
+                    data = uh.read()
+                    
                 lm = info.get("last-modified")
                 lm = datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S GMT")
                 age = datetime.utcnow() - lm
@@ -205,7 +212,7 @@ class PollStation(object):
                 self.opTypes = opType
                 self.lasiRunning = lasi
                 self.lock.release()
-            except:
+            except Exception as e:
                 pass
                 
             # Main loop stop time
@@ -269,7 +276,7 @@ def getDisplayInformation(tNow, stationName, sysStatus, opType, lasi):
         subs['sysStatus'] = 'All subsystems are normal                             '
         
     # DR OP-TYPEs
-    for i in xrange(len(opType)):
+    for i in range(len(opType)):
         key = 'optype%i' % (i+1)
         if opType[i] == 0:
             subs[key] = 'Idle        '
@@ -289,7 +296,11 @@ def getDisplayInformation(tNow, stationName, sysStatus, opType, lasi):
 
 
 def main(args):
-    if args.lwasv:
+    if args.lwana:
+        station = 'lwana'
+        lwatv_channel = 'lwatv4'
+        ndr = 4
+    elif args.lwasv:
         station = 'lwasv'
         lwatv_channel = 'lwatv2'
         ndr = 4
@@ -301,7 +312,7 @@ def main(args):
         
     # Setup the BlinkStick
     bs = blinkstick.find_first()
-    print 'Using: %s' % bs.get_serial()	
+    print(f"Using: {bs.get_serial()}")
     
     # Integer -> LED color conversion list
     ssColors = ['red', 'orange', 'green']
@@ -387,8 +398,8 @@ def main(args):
     # Save the window contents
     contents = ''
     y,x = screen.getmaxyx()
-    for i in xrange(y-1):
-        for j in xrange(x):
+    for i in range(y-1):
+        for j in range(x):
             d = screen.inch(i,j)
             c = d&0xFF
             a = (d>>8)&0xFF
@@ -402,10 +413,10 @@ def main(args):
     
     # Report on any exception that may have caused the main loop to exit
     try:
-        print "Error: %s" % exitException
+        print(f"Error: {str(exitException)}")
     except NameError:
         ## Last window contents sans attributes
-        print contents
+        print(contents)
 
 
 if __name__ == "__main__":
@@ -417,6 +428,8 @@ if __name__ == "__main__":
                         help='report on LWA1')
     group.add_argument('--lwasv', action='store_true',
                        help='report on LWA-SV')
+    group.add_argument('--lwana', action='store_true',
+                       help='report on LWA-NA')
     args = parser.parse_args()
     main(args)
         
