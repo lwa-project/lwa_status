@@ -124,7 +124,7 @@ class PollStation(object):
             self.stop()
             
         self.thread = threading.Thread(target=self.monitor, name='monitor')
-        self.thread.setDaemon(1)
+        self.thread.daemon = True
         self.alive.set()
         self.thread.start()
         time.sleep(5)
@@ -156,7 +156,7 @@ class PollStation(object):
         2 - Raw data recording mode
         """
         
-        while self.alive.isSet():
+        while self.alive.is_set():
             tStart = time.time()
             
             # Update time
@@ -221,7 +221,7 @@ class PollStation(object):
             # Pause before the next monitoring update
             sleepCount = 0.0
             sleepTime = self.pollInterval - (tStop - tStart)
-            while (self.alive.isSet() and sleepCount < sleepTime):
+            while (self.alive.is_set() and sleepCount < sleepTime):
                 time.sleep(0.2)
                 sleepCount += 0.2
                 
