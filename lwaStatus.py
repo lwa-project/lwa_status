@@ -26,7 +26,7 @@ import string
 from urllib.request import urlopen
 import argparse
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from blinkstick import blinkstick
 
 
@@ -109,7 +109,7 @@ class PollStation(object):
         self.pollInterval = float(pollInterval)
         
         # Attributes to store the station status
-        self.lastUpdate = datetime.utcnow() - timedelta(minutes=30)
+        self.lastUpdate = datetime.now(tz=timezone.utc) - timedelta(minutes=30)
         self.systemStatus = 0
         self.opTypes = [0,]*self.ndr
         self.lasiRunning = False
@@ -160,7 +160,7 @@ class PollStation(object):
             tStart = time.time()
             
             # Update time
-            tNow = datetime.utcnow()
+            tNow = datetime.now(tz=timezone.utc)
             
             # Default values
             sysStatus = 0
@@ -197,8 +197,8 @@ class PollStation(object):
                     data = uh.read()
                     
                 lm = info.get("last-modified")
-                lm = datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S GMT")
-                age = datetime.utcnow() - lm
+                lm = datetime.strptime(lm, "%a, %d %b %Y %H:%M:%S GMT").replace(tzinfo=timezone.utc)
+                age = datetime.now(tz=timezone.utc) - lm
                 age = age.days*24*3600 + age.seconds
                 
                 # Is the image recent enough to think that TBN/LASI is running?
